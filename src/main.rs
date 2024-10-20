@@ -79,6 +79,10 @@ async fn main() -> io::Result<()> {
     .server(cli::server_url(&args, Some(String::from("/api/")), true));
     let ui_docs_swagger = api_service.swagger_ui();
 
+    // Web Ui
+    let web_ui = StaticFilesEndpoint::new(env::current_dir().unwrap().join("notes_r_us_ui/dist"))
+        .index_file("index.html");
+
     // Apply CORS middleware to the routes
     let app = Route::new()
         .nest(
@@ -90,11 +94,7 @@ async fn main() -> io::Result<()> {
                 .with(Tracing)
                 .data(server_key),
         )
-        .nest(
-            "/",
-            StaticFilesEndpoint::new(env::current_dir().unwrap().join("notes_r_us_ui/dist"))
-                .index_file("index.html"),
-        );
+        .nest("/", web_ui);
     // Start the server
     Server::new(TcpListener::bind(format!(
         "{}:{}",
