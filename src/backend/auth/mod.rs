@@ -13,4 +13,5 @@
 //! This module checks the client agianst the database and can preform operations aginst it.
 
 pub mod check;
+pub mod otp_codes;
 pub mod security_scheme;
