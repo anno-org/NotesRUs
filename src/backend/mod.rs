@@ -1,3 +1,5 @@
+use std::str::FromStr;
+
 use crate::{
     backend::{
         auth::security_scheme::{ServerSecret, UserToken},
@@ -9,7 +11,11 @@ use crate::{
     },
     entity::{clients, users},
 };
-use chrono::Local;
+use auth::{
+    check::{AuthResult, CheckAuth},
+    otp_codes,
+};
+use chrono::{DateTime, FixedOffset, Local, ParseResult, Utc};
 use jwt::SignWithKey;
 use names::{Generator, Name};
 use poem::web::Data;
@@ -18,6 +24,8 @@ use poem_openapi::{
     payload::Json,
     OpenApi, Tags,
 };
+use requests::user::{UserOTPGenerationJsonRequest, UserOTPGenerationRequest};
+use responses::user::{UserOTPGenerationJsonResponse, UserOTPGenerationResponse};
 use sea_orm::ActiveModelTrait;
 use sea_orm::Set as DataBaseSet;
 use sea_orm::{DatabaseConnection, IntoActiveModel};
@@ -172,16 +180,16 @@ impl Api {
             "{:?}",
             check::CheckAuth::new(self.database_connection.clone(), auth.0.clone())
                 .await
-                .unwrap()
+                .unwrap_found()
                 .log_client()
                 .await
-                .unwrap()
+                .unwrap_found()
         );
 
         match check::CheckAuth::new(self.database_connection.clone(), auth.0.clone()).await {
-            Ok(check_auth) => match check_auth.find_user_model().await {
-                Ok(check_auth) => match check_auth.log_client().await {
-                    Ok(check_auth) => {
+            AuthResult::Found(check_auth) => match check_auth.find_user_model().await {
+                AuthResult::Found(check_auth) => match check_auth.log_client().await {
+                    AuthResult::Found(check_auth) => {
                         let mut user = check_auth.user_model.clone().unwrap().into_active_model();
                         user.name = DataBaseSet(username.0.clone());
                         user.update(&self.database_connection).await.unwrap();
@@ -195,19 +203,109 @@ impl Api {
                                 )
                         })))
                     }
-                    Err(error) => responses::user::EditUserResponse::Err(Json(
+                    AuthResult::Err(error) => responses::user::EditUserResponse::Err(Json(
                         json!({"message": "User recent client failed to be loged", "error": {"code": 500u16, "message": format!("{error:?}")}}),
                     )),
+                    AuthResult::NotFound() => responses::user::EditUserResponse::Err(Json(
+                        json!({"message": "error yet to be caught"}),
+                    )),
                 },
-                Err(error) => responses::user::EditUserResponse::Err(Json(
+                AuthResult::Err(error) => responses::user::EditUserResponse::Err(Json(
                     json!({"message": "Could not find user in database", "error": {"code": 500u16, "message": format!("{error:?}")}}),
                 )),
+                AuthResult::NotFound() => responses::user::EditUserResponse::Err(Json(
+                    json!({"message": "error yet to be caught"}),
+                )),
             },
-            Err(error) => responses::user::EditUserResponse::Err(Json(
+            AuthResult::Err(error) => responses::user::EditUserResponse::Err(Json(
                 json!({"message": "User failed to authenticate", "error": {"code": 500u16, "message": format!("{error:?}")}}),
+            )),
+            AuthResult::NotFound() => responses::user::EditUserResponse::Err(Json(
+                json!({"message": "error yet to be caught"}),
             )),
         }
     }
+
+    /// # OTP Code Generator/Creator
+    #[oai(path = "/user/otp/generate", method = "post", tag = ApiTags::User)]
+    pub async fn otp_generate(
+        &self,
+        auth: ApiSecurityScheme,
+        req: UserOTPGenerationRequest,
+    ) -> UserOTPGenerationResponse {
+        let request_body: UserOTPGenerationJsonRequest = match req {
+            UserOTPGenerationRequest::GenerateBody(body) => body.0,
+        };
+
+        let mut expiry_stamp: Option<DateTime<FixedOffset>> = None;
+
+        match request_body.expirey_date {
+            Some(ref expiry_date) => {
+                let stamp: ParseResult<DateTime<FixedOffset>> =
+                    DateTime::parse_from_rfc2822(expiry_date.as_str());
+
+                match stamp {
+                    Err(error) => {
+                        return UserOTPGenerationResponse::Err(Json(
+                            json!({"message": "TimeStamp Could Not Be Parsed Make Sure Your Using `rfc2822`", "error": {"code": 500u16, "message": error.to_string()}}),
+                        ));
+                    }
+                    Ok(_) => (),
+                };
+                expiry_stamp = Some(stamp.unwrap());
+            }
+            None => expiry_stamp = None,
+        };
+
+        let mut user_model: Option<users::Model> = None;
+
+        match CheckAuth::new(self.database_connection.clone(), auth.0).await {
+            AuthResult::Found(auth) => match auth.find_user_model().await {
+                AuthResult::Found(found_user_model) => user_model = found_user_model.user_model,
+                AuthResult::NotFound() => {
+                    return UserOTPGenerationResponse::Err(Json(json!({"Auth_error": ""})))
+                }
+                AuthResult::Err(error) => {
+                    return UserOTPGenerationResponse::Err(Json(json!({"Auth_error": ""})))
+                }
+            },
+            AuthResult::NotFound() => {
+                return UserOTPGenerationResponse::Err(Json(json!({"Auth_error": ""})))
+            }
+            AuthResult::Err(error) => {
+                return UserOTPGenerationResponse::Err(Json(json!({"Auth_error": ""})))
+            }
+        };
+
+        match otp_codes::OTPGenerator::gen(
+            request_body.number_of_codes.into(),
+            expiry_stamp,
+            user_model.clone().unwrap(),
+        )
+        .unwrap()
+        .apply(&self.database_connection)
+        .await
+        {
+            Ok(codes) => {
+                return UserOTPGenerationResponse::Ok(Json(UserOTPGenerationJsonResponse {
+                    user_id: user_model.unwrap().id as u64,
+                    otp_codes: codes,
+                    expiry: request_body.expirey_date,
+                }))
+            }
+            Err(error) => {
+                return UserOTPGenerationResponse::Err(Json(
+                    json!({"Message": "Database Error", "error": {"code": 500u16, "message": error.to_string()}}),
+                ))
+            }
+        }
+    }
+    //
+    // /// # OTP Code Authentication
+    // #[oai(path = "/user/otp/authenticate", method = "post", tag = ApiTags::User)]
+    // pub async fn otp_authenticate(&self, auth: ApiSecurityScheme, req: todo!()) -> todo!() {
+    //     todo!()
+    // }
 
     /// Create A New Post/Note
     ///

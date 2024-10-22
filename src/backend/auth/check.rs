@@ -11,6 +11,7 @@
 //! }
 //! ```
 
+use derive_more::derive::Unwrap;
 use sea_orm::{
     ActiveModelTrait, ColumnTrait, DatabaseConnection, DbErr, EntityTrait, IntoActiveModel,
     QueryFilter, Value,
@@ -34,13 +35,21 @@ pub struct CheckAuth {
     pub user_model: Option<users::Model>,
 }
 
+#[derive(Unwrap)]
+#[unwrap(ref)]
+pub enum AuthResult<T> {
+    Found(T),
+    NotFound(),
+    Err(DbErr),
+}
+
 impl CheckAuth {
     /// Creation of The [`CheckAuth`] Struct And Finds
     /// [`clients::Column::UserId`] / [`users::Column::Id`]
     pub async fn new(
         database_connection: DatabaseConnection,
         user_token: UserToken,
-    ) -> Result<Self, DbErr> {
+    ) -> AuthResult<CheckAuth> {
         // Find The Client In The Database
         let client: Result<Option<clients::Model>, DbErr> = clients::Entity::find()
             .filter(clients::Column::ClientIdentifier.contains(&user_token.client_identifier))
@@ -50,21 +59,19 @@ impl CheckAuth {
 
         // Checks if Client Was Found Or Errors And Returns
         match client {
-            Ok(Some(client_model)) => Ok(CheckAuth {
+            Ok(Some(client_model)) => AuthResult::Found(CheckAuth {
                 database_connection,
                 client_id: client_model.id,
                 user_id: client_model.user_id,
                 user_model: None,
             }),
-            Ok(None) => Err(DbErr::Custom(
-                "Client Was Not Found in The Database".to_string(),
-            )),
-            Err(error) => Err(error),
+            Ok(None) => AuthResult::NotFound(),
+            Err(error) => AuthResult::Err(error),
         }
     }
 
     /// Finds [`users::Model`]
-    pub async fn find_user_model(mut self) -> Result<Self, DbErr> {
+    pub async fn find_user_model(mut self) -> AuthResult<CheckAuth> {
         // finds the user model
         let user: Result<Option<users::Model>, DbErr> = users::Entity::find_by_id(self.user_id)
             .one(&self.database_connection)
@@ -74,20 +81,21 @@ impl CheckAuth {
         match user {
             Ok(Some(user_model)) => {
                 self.user_model = Some(user_model);
-                Ok(self)
+                AuthResult::Found(self)
             }
-            Ok(None) => Err(DbErr::Custom("User Not Found in Database".to_string())),
-            Err(error) => Err(error),
+            Ok(None) => AuthResult::NotFound(),
+            Err(error) => AuthResult::Err(error),
         }
     }
 
     /// Logs The Client Access on The User
-    pub async fn log_client(mut self) -> Result<Self, DbErr> {
+    pub async fn log_client(mut self) -> AuthResult<CheckAuth> {
         // Makes Sure The User Model is in The Struct
         if self.user_model == None {
             match self.find_user_model().await {
-                Ok(self_) => self = self_,
-                Err(error) => return Err(error),
+                AuthResult::Found(self_) => self = self_,
+                AuthResult::NotFound() => return AuthResult::NotFound(),
+                AuthResult::Err(error) => return AuthResult::Err(error),
             };
         }
 
@@ -100,11 +108,11 @@ impl CheckAuth {
 
                 // Updates The User Checks if it Failed
                 match user.update(&self.database_connection).await {
-                    Ok(_) => Ok(self),
-                    Err(error) => Err(error),
+                    Ok(_) => AuthResult::Found(self),
+                    Err(error) => AuthResult::Err(error),
                 }
             }
-            None => Err(DbErr::Custom("User Not Found in Database".to_string())),
+            None => AuthResult::NotFound(),
         }
     }
 }
