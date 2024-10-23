@@ -38,6 +38,7 @@ jwt = "0.16.0"
 uuid = { version = "1.10.0", features = ["fast-rng", "v4"] }
 names = "0.14.0"
 derive_more = { version = "1.0.0", features = ["unwrap"] }
+log = "0.4.22"
 
 [dependencies.poem]
 version = "3.0.1"

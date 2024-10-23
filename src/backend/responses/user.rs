@@ -1,6 +1,8 @@
 use chrono::{DateTime, FixedOffset};
 use poem_openapi::{payload::Json, ApiResponse, Object};
 
+use super::ErrorMessage;
+
 #[derive(ApiResponse)]
 pub enum CreateUserResponse {
     /// User Is Sucessfully Created
@@ -39,4 +41,17 @@ pub enum UserOTPGenerationResponse {
     /// Code Creation Failed
     #[oai(status = 500)]
     Err(Json<serde_json::Value>),
+}
+
+#[derive(ApiResponse)]
+pub enum UserOTPUseResponse {
+    #[oai(status = 200)]
+    Ok(
+        Json<serde_json::Value>,
+        #[oai(header = "set-cookie")] String,
+    ),
+    #[oai(status = 401)]
+    Invalid(Json<ErrorMessage>),
+    #[oai(status = 500)]
+    Err(Json<ErrorMessage>),
 }

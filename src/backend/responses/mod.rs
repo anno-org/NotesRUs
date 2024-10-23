@@ -1,11 +1,29 @@
 use poem_openapi::{
     payload::{Attachment, Json, PlainText},
     types::multipart::Upload,
-    ApiResponse, Multipart,
+    ApiResponse, Multipart, Object,
 };
 
 pub mod post;
 pub mod user;
+
+/// Error Sub Struct
+#[derive(Object)]
+pub struct Error {
+    /// HTTP Error Code
+    pub code: u16,
+    /// Raw Error Messge
+    pub message: String,
+}
+
+/// Global Error Response Struct
+#[derive(Object)]
+pub struct ErrorMessage {
+    /// Simplifyed Error Message
+    pub message: String,
+    /// Advanced Error Explaination
+    pub error: Error,
+}
 
 #[derive(Debug, ApiResponse)]
 pub enum GetFileResponse {

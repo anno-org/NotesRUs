@@ -2,7 +2,8 @@
 
 use chrono::{DateTime, FixedOffset, Local};
 use sea_orm::{
-    ActiveModelTrait, ActiveValue, ColumnTrait, DatabaseConnection, DbErr, EntityTrait, QueryFilter,
+    ActiveModelTrait, ActiveValue, ColumnTrait, DatabaseConnection, DbErr, EntityTrait, ModelTrait,
+    QueryFilter,
 };
 
 use crate::entity::{clients::Model, otp_codes, users};
@@ -116,7 +117,7 @@ impl OTPGenerator {
 }
 
 pub enum OTPCodeValidity {
-    Invalid,
+    Invalid(String),
     Valid(users::Model),
 }
 
@@ -130,14 +131,37 @@ pub async fn otp_code_verification(
         .await?;
 
     if option_model == None {
-        return Ok(OTPCodeValidity::Invalid);
+        return Ok(OTPCodeValidity::Invalid("Code Not Found".to_string()));
+    } else if option_model.clone().unwrap().expiry_date == None {
+        ()
+    } else if option_model.clone().unwrap().expiry_date.unwrap() < Local::now() {
+        option_model
+            .clone()
+            .unwrap()
+            .delete(database_connection)
+            .await?;
+        return Ok(OTPCodeValidity::Invalid("Code Is expired".to_string()));
     }
 
-    match users::Entity::find_by_id(option_model.unwrap().user_id)
+    match users::Entity::find_by_id(option_model.clone().unwrap().user_id)
         .one(database_connection)
         .await?
     {
-        Some(user_model) => return Ok(OTPCodeValidity::Valid(user_model)),
-        None => Ok(OTPCodeValidity::Invalid),
+        Some(user_model) => {
+            match option_model {
+                Some(model) => {
+                    model.delete(database_connection).await?;
+                    ()
+                }
+                _ => {
+                    log::error!(
+                        "backend::auth::otp_codes::opt_code_validation could not delete code"
+                    );
+                    ()
+                }
+            }
+            return Ok(OTPCodeValidity::Valid(user_model));
+        }
+        None => Ok(OTPCodeValidity::Invalid("Code Not Found".to_string())),
     }
 }

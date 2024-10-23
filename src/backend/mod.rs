@@ -1,5 +1,3 @@
-use std::str::FromStr;
-
 use crate::{
     backend::{
         auth::security_scheme::{ServerSecret, UserToken},
@@ -13,9 +11,9 @@ use crate::{
 };
 use auth::{
     check::{AuthResult, CheckAuth},
-    otp_codes,
+    otp_codes::{self, otp_code_verification, OTPCodeValidity},
 };
-use chrono::{DateTime, FixedOffset, Local, ParseResult, Utc};
+use chrono::{DateTime, FixedOffset, Local, ParseResult};
 use jwt::SignWithKey;
 use names::{Generator, Name};
 use poem::web::Data;
@@ -24,8 +22,10 @@ use poem_openapi::{
     payload::Json,
     OpenApi, Tags,
 };
-use requests::user::{UserOTPGenerationJsonRequest, UserOTPGenerationRequest};
-use responses::user::{UserOTPGenerationJsonResponse, UserOTPGenerationResponse};
+use requests::user::{self, UserOTPGenerationJsonRequest, UserOTPGenerationRequest};
+use responses::user::{
+    UserOTPGenerationJsonResponse, UserOTPGenerationResponse, UserOTPUseResponse,
+};
 use sea_orm::ActiveModelTrait;
 use sea_orm::Set as DataBaseSet;
 use sea_orm::{DatabaseConnection, IntoActiveModel};
@@ -300,12 +300,63 @@ impl Api {
             }
         }
     }
-    //
-    // /// # OTP Code Authentication
-    // #[oai(path = "/user/otp/authenticate", method = "post", tag = ApiTags::User)]
-    // pub async fn otp_authenticate(&self, auth: ApiSecurityScheme, req: todo!()) -> todo!() {
-    //     todo!()
-    // }
+
+    /// OTP Code Authentication
+    #[oai(path = "/user/otp/authenticate", method = "post", tag = ApiTags::User)]
+    pub async fn otp_authenticate(
+        &self,
+        server_secret: Data<&ServerSecret>,
+        code: Query<String>,
+        client_identifier: Query<String>,
+    ) -> UserOTPUseResponse {
+        match otp_code_verification(code.0, &self.database_connection).await {
+            Ok(OTPCodeValidity::Valid(user_model)) => {
+                let client_token = UserToken {
+                    client_identifier: client_identifier.0.clone(),
+                    client_secret: Uuid::new_v4().to_string(),
+                    user_name: user_model.username,
+                    ..Default::default()
+                };
+
+                let client = clients::ActiveModel {
+                    user_id: sea_orm::ActiveValue::Set(user_model.id),
+                    client_identifier: sea_orm::ActiveValue::Set(client_identifier.0),
+                    client_secret: sea_orm::ActiveValue::Set(client_token.client_secret.clone()),
+                    creation_time: sea_orm::ActiveValue::Set(client_token.creation_date.into()),
+                    ..Default::default()
+                };
+                match client.insert(&self.database_connection).await {
+                    Ok(_) => UserOTPUseResponse::Ok(
+                        Json(json!({})),
+                        client_token.to_cookie_string(&self.args, server_secret.0.clone(), None),
+                    ),
+                    Err(error) => UserOTPUseResponse::Err(Json(responses::ErrorMessage {
+                        message: "Database Failure To Create Client".to_string(),
+                        error: responses::Error {
+                            message: error.to_string(),
+                            code: 500,
+                        },
+                    })),
+                }
+            }
+            Err(error) => UserOTPUseResponse::Err(Json(responses::ErrorMessage {
+                message: "Database Failure On Fetch Of Code".to_string(),
+                error: responses::Error {
+                    code: 500,
+                    message: error.to_string(),
+                },
+            })),
+            Ok(OTPCodeValidity::Invalid(invalid_error)) => {
+                UserOTPUseResponse::Invalid(Json(responses::ErrorMessage {
+                    message: "Code Was Invalid".to_string(),
+                    error: responses::Error {
+                        code: 401,
+                        message: invalid_error,
+                    },
+                }))
+            }
+        }
+    }
 
     /// Create A New Post/Note
     ///

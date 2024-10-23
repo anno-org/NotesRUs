@@ -8,7 +8,7 @@ use poem::{
     EndpointExt, Route, Server,
 };
 use poem_openapi::OpenApiService;
-use sea_orm::{Database, DatabaseConnection};
+use sea_orm::{ConnectOptions, Database, DatabaseConnection};
 use std::{env, io};
 use tracing::Level;
 use tracing_subscriber::FmtSubscriber;
@@ -21,8 +21,12 @@ async fn main() -> io::Result<()> {
     let args = cli::parse();
 
     // Database Connection
+    let mut database_connection_config = ConnectOptions::new(&args.database_url);
+
+    database_connection_config.sqlx_logging_level(log::LevelFilter::Off);
+
     let database_connection: DatabaseConnection =
-        Database::connect(&args.database_url).await.unwrap();
+        Database::connect(database_connection_config).await.unwrap();
 
     // Migration run
     let _ = Migrator::up(&database_connection, None).await;
