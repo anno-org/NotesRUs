@@ -7,7 +7,7 @@ use crate::{
             PostResponseSuccess,
         },
     },
-    entity::{clients, users},
+    entity::{clients, posts, users},
 };
 use auth::{
     check::{AuthResult, CheckAuth},
@@ -19,10 +19,9 @@ use names::{Generator, Name};
 use poem::web::Data;
 use poem_openapi::{
     param::{Header, Query},
-    payload::Json,
+    payload::{Json, PlainText},
     OpenApi, Tags,
 };
-use requests::user::{self, UserOTPGenerationJsonRequest, UserOTPGenerationRequest};
 use responses::user::{
     UserOTPGenerationJsonResponse, UserOTPGenerationResponse, UserOTPUseResponse,
 };

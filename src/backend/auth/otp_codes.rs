@@ -6,7 +6,7 @@ use sea_orm::{
     QueryFilter,
 };
 
-use crate::entity::{clients::Model, otp_codes, users};
+use crate::entity::{otp_codes, users};
 
 /// # Code Generator
 ///
