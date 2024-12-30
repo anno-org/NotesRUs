@@ -9,8 +9,8 @@ fn username_default() -> String {
 }
 
 /// Default Value For `post_id` in [`PostResponseSuccess`]
-fn post_id_default() -> u64 {
-    123u64
+fn post_id_default() -> i32 {
+    123i32
 }
 
 /// Post/Note Creation Info
@@ -23,7 +23,7 @@ pub struct PostResponseSuccess {
     pub username: String,
     /// The Id Of The Post/Note On The Creators Account
     #[oai(default = "post_id_default")]
-    pub post_id: u64,
+    pub post_id: i32,
 }
 
 #[derive(Object)]
@@ -48,6 +48,9 @@ pub enum PostCreationResponse {
     /// Post Is Successfuly Created
     #[oai(status = 201)]
     PostCreated(Json<PostResponseSuccess>),
+    /// Requesting User Is Unauthorised
+    #[oai(status = 403)]
+    Forbiden,
     /// Bad Request With Error Response
     #[oai(status = 400)]
     Err(PlainText<String>),

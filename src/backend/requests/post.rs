@@ -20,10 +20,10 @@ fn post_id_default() -> u64 {
 pub struct PostContentBody {
     /// The Title Of You Post/Note
     #[oai(default = "title_default")]
-    title: String,
+    pub title: String,
     /// The Main Body/Content Of Your Post/Note
     #[oai(default = "body_default")]
-    body: String,
+    pub body: String,
 }
 
 /// Body Of Post/Note A Select Type Request

@@ -22,6 +22,7 @@ use poem_openapi::{
     payload::{Json, PlainText},
     OpenApi, Tags,
 };
+use requests::{post::PostContentBody, user::{UserOTPGenerationJsonRequest, UserOTPGenerationRequest}};
 use responses::user::{
     UserOTPGenerationJsonResponse, UserOTPGenerationResponse, UserOTPUseResponse,
 };
@@ -363,17 +364,58 @@ impl Api {
     #[oai(path = "/post/create", method = "put", tag = ApiTags::Post)]
     pub async fn post_create(
         &self,
+        server_secret: Data<&ServerSecret>,
         auth: ApiSecurityScheme,
         req: PostCreation,
     ) -> PostCreationResponse {
-        let body = match req {
-            PostCreation::CreatePost(body) => body,
+        let request_body: PostContentBody = match req {
+            PostCreation::CreatePost(body) => body.0,
         };
 
-        PostCreationResponse::PostCreated(Json(PostResponseSuccess {
-            username: "coolname".to_string(),
-            post_id: 10u64,
-        }))
+        let user_info: CheckAuth = match CheckAuth::new(self.database_connection.clone(), auth.0).await {
+            AuthResult::Found(check_auth_struct) => check_auth_struct,
+            AuthResult::NotFound() => {
+                return PostCreationResponse::Forbiden
+            },
+            AuthResult::Err(db_err) => {
+                return PostCreationResponse::Err(
+                    PlainText(
+                        db_err.to_string()
+                    )
+                )
+            }
+        }.log_client()
+            .await
+            .unwrap_found().find_user_model().await.unwrap_found();
+
+        let post: Result<posts::Model, sea_orm::DbErr> = posts::ActiveModel {
+            user_id: sea_orm::ActiveValue::Set(user_info.user_id),
+            title: sea_orm::ActiveValue::Set(request_body.title),
+            body: sea_orm::ActiveValue::Set(request_body.body),
+            creation_time: sea_orm::ActiveValue::Set(Local::now().into()),
+            ..Default::default()
+        }.insert(&self.database_connection).await;
+
+        match post {
+            Ok(model) => {
+                return PostCreationResponse::PostCreated(Json(PostResponseSuccess {
+                    username: match user_info.user_model {
+                        Some(user_model) => user_model.username,
+                        None => {
+                            return PostCreationResponse::Err(
+                                PlainText(
+                                    "DBERR: Failed To Find The Username/Model".to_string()
+                                )
+                            )
+                        },
+                    },
+                    post_id: model.id
+                }))
+            },
+            Err(db_err) => {
+                PostCreationResponse::Err(PlainText(db_err.to_string()))
+            }
+        }
     }
 
     /// Edit An Exsiting Post/Note
