@@ -237,6 +237,8 @@ impl Api {
             UserOTPGenerationRequest::GenerateBody(body) => body.0,
         };
 
+        //FIX: need to change this to some how not use a hanging refrance to
+        //make the variable to be avilable in this scope.
         let mut expiry_stamp: Option<DateTime<FixedOffset>> = None;
 
         match request_body.expirey_date {
@@ -257,6 +259,8 @@ impl Api {
             None => expiry_stamp = None,
         };
 
+        //FIX: need to change this to some how not use a hanging refrance to
+        //make the variable to be avilable in this scope.
         let mut user_model: Option<users::Model> = None;
 
         match CheckAuth::new(self.database_connection.clone(), auth.0).await {
@@ -277,27 +281,37 @@ impl Api {
             }
         };
 
-        match otp_codes::OTPGenerator::gen(
-            request_body.number_of_codes.into(),
-            expiry_stamp,
-            user_model.clone().unwrap(),
-        )
-        .unwrap()
-        .apply(&self.database_connection)
-        .await
-        {
-            Ok(codes) => {
-                return UserOTPGenerationResponse::Ok(Json(UserOTPGenerationJsonResponse {
-                    user_id: user_model.unwrap().id as u64,
-                    otp_codes: codes,
-                    expiry: request_body.expirey_date,
-                }))
+        if let Some(user_model) = user_model {
+            match otp_codes::OTPGenerator::gen(
+                request_body.number_of_codes.into(),
+                expiry_stamp,
+                &user_model,
+            )
+            .unwrap()
+            .apply(&self.database_connection)
+            .await
+            {
+                Ok(codes) => {
+                    return UserOTPGenerationResponse::Ok(Json(UserOTPGenerationJsonResponse {
+                        user_id: user_model.id as u64,
+                        otp_codes: codes,
+                        expiry: request_body.expirey_date,
+                    }))
+                }
+                Err(error) => {
+                    return UserOTPGenerationResponse::Err(Json(
+                        json!({"Message": "Database Error", "error": {"code": 500u16, "message": error.to_string()}}),
+                    ))
+                }
             }
-            Err(error) => {
-                return UserOTPGenerationResponse::Err(Json(
-                    json!({"Message": "Database Error", "error": {"code": 500u16, "message": error.to_string()}}),
-                ))
-            }
+        } else {
+            return UserOTPGenerationResponse::Err(Json(json!({
+                "Message": "Database Error",
+                "error": {
+                    "code": 500u16,
+                    "message": "User/user_model Was Not Found"
+                }
+            })));
         }
     }
 

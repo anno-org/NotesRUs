@@ -38,7 +38,7 @@ impl OTPGenerator {
     /// let generated_code_active_models: OTPGenerator = match OTPGenerator::gen(
     ///     1,
     ///     Some(expiry_date.clone().into()),
-    ///     user.clone()
+    ///     &user
     /// ) {
     ///     Ok(models) => models,
     ///     Err(err) => panic!("{}", err)
@@ -65,7 +65,7 @@ impl OTPGenerator {
     pub fn gen(
         code_quantity: usize,
         expirey_date: Option<DateTime<FixedOffset>>,
-        user_model: users::Model,
+        user_model: &users::Model,
     ) -> Result<Self, &'static str> {
         let mut otp_codes_models: Vec<otp_codes::ActiveModel> = Vec::new();
 
