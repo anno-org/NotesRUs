@@ -22,6 +22,8 @@ use crate::{
     entity::{clients, users},
 };
 
+//TODO: have still to add generic lifetimes removing the need for a clone 🗿
+
 /// Check Auth Pases And Retrives Data Based On [`UserToken`]
 #[derive(Debug)]
 pub struct CheckAuth {
@@ -47,20 +49,20 @@ impl CheckAuth {
     /// Creation of The [`CheckAuth`] Struct And Finds
     /// [`clients::Column::UserId`] / [`users::Column::Id`]
     pub async fn new(
-        database_connection: DatabaseConnection,
+        database_connection: &DatabaseConnection,
         user_token: UserToken,
     ) -> AuthResult<CheckAuth> {
         // Find The Client In The Database
         let client: Result<Option<clients::Model>, DbErr> = clients::Entity::find()
             .filter(clients::Column::ClientIdentifier.contains(&user_token.client_identifier))
             .filter(clients::Column::ClientSecret.contains(&user_token.client_secret))
-            .one(&database_connection)
+            .one(database_connection)
             .await;
 
         // Checks if Client Was Found Or Errors And Returns
         match client {
             Ok(Some(client_model)) => AuthResult::Found(CheckAuth {
-                database_connection,
+                database_connection: database_connection.clone(),
                 client_id: client_model.id,
                 user_id: client_model.user_id,
                 user_model: None,

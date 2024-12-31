@@ -179,17 +179,7 @@ impl Api {
         auth: ApiSecurityScheme,
         #[oai(name = "NewName")] username: Header<String>,
     ) -> responses::user::EditUserResponse {
-        println!(
-            "{:?}",
-            check::CheckAuth::new(self.database_connection.clone(), auth.0.clone())
-                .await
-                .unwrap_found()
-                .log_client()
-                .await
-                .unwrap_found()
-        );
-
-        match check::CheckAuth::new(self.database_connection.clone(), auth.0.clone()).await {
+        match check::CheckAuth::new(&self.database_connection, auth.0.clone()).await {
             AuthResult::Found(check_auth) => match check_auth.find_user_model().await {
                 AuthResult::Found(check_auth) => match check_auth.log_client().await {
                     AuthResult::Found(check_auth) => {
@@ -266,7 +256,7 @@ impl Api {
         //make the variable to be avilable in this scope.
         let mut user_model: Option<users::Model> = None;
 
-        match CheckAuth::new(self.database_connection.clone(), auth.0).await {
+        match CheckAuth::new(&self.database_connection, auth.0).await {
             AuthResult::Found(auth) => match auth.find_user_model().await {
                 AuthResult::Found(found_user_model) => user_model = found_user_model.user_model,
                 AuthResult::NotFound() => {
@@ -389,20 +379,19 @@ impl Api {
             PostCreation::CreatePost(body) => body.0,
         };
 
-        let user_info: CheckAuth =
-            match CheckAuth::new(self.database_connection.clone(), auth.0).await {
-                AuthResult::Found(check_auth_struct) => check_auth_struct,
-                AuthResult::NotFound() => return PostCreationResponse::Forbiden,
-                AuthResult::Err(db_err) => {
-                    return PostCreationResponse::Err(PlainText(db_err.to_string()))
-                }
+        let user_info: CheckAuth = match CheckAuth::new(&self.database_connection, auth.0).await {
+            AuthResult::Found(check_auth_struct) => check_auth_struct,
+            AuthResult::NotFound() => return PostCreationResponse::Forbiden,
+            AuthResult::Err(db_err) => {
+                return PostCreationResponse::Err(PlainText(db_err.to_string()))
             }
-            .log_client()
-            .await
-            .unwrap_found()
-            .find_user_model()
-            .await
-            .unwrap_found();
+        }
+        .log_client()
+        .await
+        .unwrap_found()
+        .find_user_model()
+        .await
+        .unwrap_found();
 
         let post: Result<posts::Model, sea_orm::DbErr> = posts::ActiveModel {
             user_id: sea_orm::ActiveValue::Set(user_info.user_id),
