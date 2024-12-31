@@ -29,13 +29,13 @@ pub struct PostResponseSuccess {
 #[derive(Object)]
 pub struct Post {
     pub username: String,
-    pub post_id: u64,
+    pub post_id: i32,
     pub title: String,
     pub body: String,
     pub created_at: String,
     pub edited_at: String,
-    pub up_votes: u64,
-    pub down_votes: u64,
+    pub up_votes: i32,
+    pub down_votes: i32,
 }
 
 /// Post/Note Creation Response

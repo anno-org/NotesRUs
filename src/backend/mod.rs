@@ -22,12 +22,15 @@ use poem_openapi::{
     payload::{Json, PlainText},
     OpenApi, Tags,
 };
-use requests::{post::PostContentBody, user::{UserOTPGenerationJsonRequest, UserOTPGenerationRequest}};
+use requests::{
+    post::PostContentBody,
+    user::{UserOTPGenerationJsonRequest, UserOTPGenerationRequest},
+};
 use responses::user::{
     UserOTPGenerationJsonResponse, UserOTPGenerationResponse, UserOTPUseResponse,
 };
-use sea_orm::ActiveModelTrait;
 use sea_orm::Set as DataBaseSet;
+use sea_orm::{ActiveModelTrait, EntityTrait};
 use sea_orm::{DatabaseConnection, IntoActiveModel};
 use serde_json::json;
 use uuid::Uuid;
@@ -458,7 +461,37 @@ impl Api {
     ///
     /// This route gets posts/notes by id.
     #[oai(path = "/post/get", method = "get", tag = ApiTags::Post)]
-    pub async fn post_get(&self, #[oai(name = "PostId")] post_id: Query<u64>) -> PostGetResponse {
-        PostGetResponse::PostNotFound
+    pub async fn post_get(&self, #[oai(name = "PostId")] post_id: Query<i32>) -> PostGetResponse {
+        match posts::Entity::find_by_id(post_id.0)
+            .one(&self.database_connection)
+            .await
+        {
+            Ok(post_model) => match post_model {
+                Some(post_model) => {
+                    let username: String = match users::Entity::find_by_id(post_model.user_id)
+                        .one(&self.database_connection)
+                        .await
+                    {
+                        Ok(Some(user_model)) => user_model.username,
+                        _ => "User Dosen't Exsit Or A DbErr Occurred".to_string(),
+                    };
+                    return PostGetResponse::PostFound(Json(responses::post::Post {
+                        username,
+                        post_id: post_model.id,
+                        title: post_model.title,
+                        body: post_model.body,
+                        created_at: post_model.creation_time.to_rfc3339(),
+                        edited_at: match post_model.edit_time {
+                            Some(edit_time) => edit_time.to_rfc3339(),
+                            None => "".to_string(),
+                        },
+                        up_votes: post_model.up_votes.unwrap_or(0i32),
+                        down_votes: post_model.up_votes.unwrap_or(0i32),
+                    }));
+                }
+                None => PostGetResponse::PostNotFound,
+            },
+            Err(db_err) => PostGetResponse::PostNotFound,
+        }
     }
 }
