@@ -52,7 +52,7 @@ pub enum PostCreationResponse {
     #[oai(status = 403)]
     Forbiden,
     /// Bad Request With Error Response
-    #[oai(status = 400)]
+    #[oai(status = 500)]
     Err(PlainText<String>),
 }
 
@@ -72,7 +72,7 @@ pub enum PostEditionResponse {
     /// Bad Request With Error Response
     ///
     /// Dev notes: Might Not be needed...
-    #[oai(status = 400)]
+    #[oai(status = 500)]
     Err(PlainText<String>),
 }
 
@@ -89,6 +89,9 @@ pub enum PostDeletionResponse {
     /// Requesting User Is Unautorized To Preform Action
     #[oai(status = 403)]
     Forbiden,
+    // Internal Error
+    #[oai(status = 500)]
+    Err(PlainText<String>),
 }
 
 #[derive(ApiResponse)]
@@ -99,4 +102,7 @@ pub enum PostGetResponse {
     /// Post/Note Was Not Found
     #[oai(status = 404)]
     PostNotFound,
+    /// Internal Error
+    #[oai(status = 500)]
+    Err(PlainText<String>),
 }
