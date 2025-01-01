@@ -26,14 +26,6 @@ pub struct PostContentBody {
     pub body: String,
 }
 
-/// Body Of Post/Note A Select Type Request
-#[derive(Object)]
-pub struct PostSelectionBody {
-    /// Post/Note You Want To Be Select
-    #[oai(default = "post_id_default")]
-    post_id: u64,
-}
-
 /// Post/Note Creation
 #[derive(ApiRequest)]
 pub enum PostCreation {
@@ -46,11 +38,4 @@ pub enum PostCreation {
 pub enum PostEdition {
     /// Json Request Body
     EditPost(Json<PostContentBody>),
-}
-
-/// Post/Note Selection
-#[derive(ApiRequest)]
-pub enum PostSelection {
-    /// Requests Json Body
-    DeletePost(Json<PostSelectionBody>),
 }

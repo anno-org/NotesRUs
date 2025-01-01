@@ -1,7 +1,7 @@
 use crate::{
     backend::{
         auth::security_scheme::{ServerSecret, UserToken},
-        requests::post::{PostCreation, PostEdition, PostSelection},
+        requests::post::{PostCreation, PostEdition},
         responses::post::{
             PostCreationResponse, PostDeletionResponse, PostEditionResponse, PostGetResponse,
             PostResponseSuccess,
@@ -29,8 +29,8 @@ use requests::{
 use responses::user::{
     UserOTPGenerationJsonResponse, UserOTPGenerationResponse, UserOTPUseResponse,
 };
-use sea_orm::Set as DataBaseSet;
-use sea_orm::{ActiveModelTrait, EntityTrait};
+use sea_orm::{ActiveModelTrait, EntityTrait, ModelTrait, QueryFilter};
+use sea_orm::{ColumnTrait, Set as DataBaseSet};
 use sea_orm::{DatabaseConnection, IntoActiveModel};
 use serde_json::json;
 use uuid::Uuid;
@@ -177,14 +177,14 @@ impl Api {
     pub async fn wow(
         &self,
         auth: ApiSecurityScheme,
-        #[oai(name = "NewName")] username: Header<String>,
+        #[oai(name = "NewName")] name: Header<String>,
     ) -> responses::user::EditUserResponse {
         match check::CheckAuth::new(&self.database_connection, auth.0.clone()).await {
             AuthResult::Found(check_auth) => match check_auth.find_user_model().await {
                 AuthResult::Found(check_auth) => match check_auth.log_client().await {
                     AuthResult::Found(check_auth) => {
                         let mut user = check_auth.user_model.clone().unwrap().into_active_model();
-                        user.name = DataBaseSet(username.0.clone());
+                        user.name = DataBaseSet(name.0.clone());
                         user.update(&self.database_connection).await.unwrap();
 
                         responses::user::EditUserResponse::Ok(Json(json!({
@@ -192,7 +192,7 @@ impl Api {
                                 format!(
                                     "User {}'s name was updated to {}",
                                     check_auth.user_model.unwrap().username,
-                                    username.0
+                                    name.0
                                 )
                         })))
                     }
@@ -441,9 +441,53 @@ impl Api {
     pub async fn post_delete(
         &self,
         auth: ApiSecurityScheme,
-        req: PostSelection,
+        #[oai(name = "PostId")] post_id: Query<i32>,
     ) -> PostDeletionResponse {
-        PostDeletionResponse::Forbiden
+        let mut user_id: i32 = 0i32;
+        let mut username: String = "".to_string();
+
+        match CheckAuth::new(&self.database_connection, auth.0).await {
+            AuthResult::Found(check_auth_struct) => match check_auth_struct.log_client().await {
+                AuthResult::Found(check_auth_struct) => {
+                    user_id = check_auth_struct.user_id;
+
+                    //NOTE: in the procerss of running the log_client function
+                    //it retrives user_model.
+                    username = check_auth_struct.user_model.unwrap().username;
+                }
+                AuthResult::NotFound() => return PostDeletionResponse::Forbiden,
+                AuthResult::Err(db_err) => {
+                    return PostDeletionResponse::Err(PlainText(db_err.to_string()))
+                }
+            },
+            AuthResult::NotFound() => return PostDeletionResponse::Forbiden,
+            AuthResult::Err(db_err) => {
+                return PostDeletionResponse::Err(PlainText(db_err.to_string()))
+            }
+        };
+
+        //NOTE: if the user was not able to login to delete the post they would
+        //allready have recived a error
+
+        match posts::Entity::find_by_id(post_id.0)
+            .filter(posts::Column::UserId.contains(user_id.to_string()))
+            .one(&self.database_connection)
+            .await
+        {
+            Ok(Some(post_model)) => match post_model.delete(&self.database_connection).await {
+                Ok(deletion_res) => {
+                    return PostDeletionResponse::PostDeletion(Json(PostResponseSuccess {
+                        username,
+                        post_id: post_id.0,
+                    }))
+                }
+                Err(db_err) => {
+                    return PostDeletionResponse::Err(PlainText(format!("DBERR: {db_err}")))
+                }
+            },
+            Ok(None) => PostDeletionResponse::Forbiden,
+            Err(db_err) => PostDeletionResponse::Err(PlainText(format!("DBERR: {db_err}"))),
+        }
     }
 
     /// Get A Post/Note
@@ -480,7 +524,7 @@ impl Api {
                 }
                 None => PostGetResponse::PostNotFound,
             },
-            Err(db_err) => PostGetResponse::PostNotFound,
+            Err(db_err) => PostGetResponse::Err(PlainText(format!("DbErr: {db_err}"))),
         }
     }
 }
