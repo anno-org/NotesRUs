@@ -443,6 +443,7 @@ impl Api {
         auth: ApiSecurityScheme,
         #[oai(name = "PostId")] post_id: Query<i32>,
     ) -> PostDeletionResponse {
+        //NOTE: Should remove these variables in exchange for a better soloution.
         let mut user_id: i32 = 0i32;
         let mut username: String = "".to_string();
 
