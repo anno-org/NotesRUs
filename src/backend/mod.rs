@@ -177,7 +177,7 @@ impl Api {
     pub async fn wow(
         &self,
         auth: ApiSecurityScheme,
-        #[oai(name = "NewName")] name: Header<String>,
+        #[oai(name = "NewName")] name: Query<String>,
     ) -> responses::user::EditUserResponse {
         match check::CheckAuth::new(&self.database_connection, auth.0.clone()).await {
             AuthResult::Found(check_auth) => match check_auth.find_user_model().await {
