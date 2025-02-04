@@ -7,7 +7,11 @@ use crate::{
             PostResponseSuccess,
         },
     },
-    entity::{clients, posts, users},
+    entity::{
+        clients,
+        posts::{self, ActiveModel},
+        users,
+    },
 };
 use auth::{
     check::{AuthResult, CheckAuth},
@@ -29,7 +33,7 @@ use requests::{
 use responses::user::{
     UserOTPGenerationJsonResponse, UserOTPGenerationResponse, UserOTPUseResponse,
 };
-use sea_orm::{ActiveModelTrait, EntityTrait, ModelTrait, QueryFilter};
+use sea_orm::{ActiveModelTrait, ActiveValue, EntityTrait, ModelTrait, QueryFilter};
 use sea_orm::{ColumnTrait, Set as DataBaseSet};
 use sea_orm::{DatabaseConnection, IntoActiveModel};
 use serde_json::json;
@@ -428,10 +432,62 @@ impl Api {
     pub async fn post_edit(
         &self,
         auth: ApiSecurityScheme,
-        #[oai(name = "PostId")] post_id: Header<String>,
+        #[oai(name = "PostId")] post_id: Query<i32>,
         req: PostEdition,
     ) -> PostEditionResponse {
-        PostEditionResponse::Forbiden
+        let req: PostContentBody = match req {
+            PostEdition::EditPost(body) => body.0,
+        };
+
+        // NOTE: The unread values should be replaced for a better soloution. (🗿)
+        let mut user_id: i32 = 0i32;
+        let mut username: String = "".to_string();
+
+        // user authentication plus catching all possible errors
+        match CheckAuth::new(&self.database_connection, auth.0).await {
+            AuthResult::Found(check_auth_struct) => match check_auth_struct.log_client().await {
+                AuthResult::Found(check_auth_struct) => {
+                    user_id = check_auth_struct.user_id;
+                    username = check_auth_struct.user_model.unwrap().username;
+                }
+                AuthResult::Err(db_err) => {
+                    return PostEditionResponse::Err(Json(format!("'DbErr': '{db_err}'")))
+                }
+                AuthResult::NotFound() => return PostEditionResponse::Forbiden,
+            },
+            AuthResult::Err(db_err) => {
+                return PostEditionResponse::Err(Json(format!("'DbErr': '{db_err}'")))
+            }
+            AuthResult::NotFound() => return PostEditionResponse::Forbiden,
+        }
+
+        // find the curent post state and edit it
+        match posts::Entity::find_by_id(post_id.0)
+            .filter(posts::Column::UserId.contains(user_id.to_string()))
+            .one(&self.database_connection)
+            .await
+        {
+            Ok(Some(post_model)) => {
+                let mut post_model: posts::ActiveModel = post_model.into_active_model();
+                post_model.title = ActiveValue::Set(req.title);
+                post_model.body = ActiveValue::Set(req.body);
+                match post_model.update(&self.database_connection).await {
+                    Ok(post_model) => {
+                        return PostEditionResponse::PostEdtion(Json(PostResponseSuccess {
+                            username: username,
+                            post_id: post_model.id,
+                        }))
+                    }
+                    Err(db_err) => {
+                        return PostEditionResponse::Err(Json(format!("'DbErr': '{db_err}'")))
+                    }
+                }
+            }
+            Ok(None) => {
+                return PostEditionResponse::Err(Json("'DbErr': 'post not found'".to_string()))
+            }
+            Err(db_err) => return PostEditionResponse::Err(Json(format!("'DbErr': '{db_err}'"))),
+        }
     }
 
     /// Delete A Post/Note

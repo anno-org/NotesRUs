@@ -73,7 +73,7 @@ pub enum PostEditionResponse {
     ///
     /// Dev notes: Might Not be needed...
     #[oai(status = 500)]
-    Err(PlainText<String>),
+    Err(Json<String>),
 }
 
 /// Post/Note Deletion Response
