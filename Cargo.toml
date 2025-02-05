@@ -23,25 +23,25 @@ license-file = "LICENSE"
 keywords = ["Api", "Notes", "Database"]
 
 [dependencies]
-swagger = "6.4.1"
-tokio = { version = "1.37.0", features = ["full"] }
-tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
-tracing = "0.1.4"
-serde_json = "1.0.117"
-chrono = "0.4.38"
-chrono-tz = "0.9.0"
-notes_r_us_migrations = { path = "./migration", version = "0.1.0"}
-serde = "1.0.208"
+swagger = "6.5.0"
+tokio = { version = "1.43.0", features = ["full"] }
+tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
+tracing = "0.1.41"
+serde_json = "1.0.138"
+chrono = "0.4.39"
+chrono-tz = "0.10.1"
+notes_r_us_migrations = { path = "./migration", version = "0.1.1"}
+serde = "1.0.217"
 sha2 = "0.10.8"
 hmac = "0.12.1"
 jwt = "0.16.0"
-uuid = { version = "1.10.0", features = ["fast-rng", "v4"] }
+uuid = { version = "1.12.1", features = ["fast-rng", "v4"] }
 names = "0.14.0"
-derive_more = { version = "1.0.0", features = ["unwrap"] }
-log = "0.4.22"
+derive_more = { version = "2.0.1", features = ["unwrap"] }
+log = "0.4.25"
 
 [dependencies.poem]
-version = "3.0.1"
+version = "3.1.6"
 features = [
 	"static-files",
 	"multipart",
@@ -49,21 +49,21 @@ features = [
 ]
 
 [dependencies.poem-openapi]
-version = "5.0.2"
+version = "5.1.5"
 features = [
 	"swagger-ui",
 	"openapi-explorer"
 ]
 
 [dependencies.clap]
-version = "4.5.4"
+version = "4.5.28"
 features = [
 	"derive",
 	"env"
 ]
 
 [dependencies.sea-orm]
-version = "0.12.15"
+version = "1.1.4"
 features = [
 	"runtime-tokio-rustls",
 	"sqlx-mysql",

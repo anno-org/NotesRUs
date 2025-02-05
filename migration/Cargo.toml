@@ -1,6 +1,6 @@
 [package]
 name = "notes_r_us_migrations"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 readme = "README.md"
 description = "Database Migrations For Notesrus"
@@ -16,8 +16,8 @@ name = "notes_r_us_migrations"
 path = "src/lib.rs"
 
 [dependencies]
-async-std = { version = "1", features = ["attributes", "tokio1"] }
+async-std = { version = "1.13.0", features = ["attributes", "tokio1"] }
 
 [dependencies.sea-orm-migration]
-version = "0.12.0"
+version = "1.1.4"
 features = ["runtime-async-std-rustls", "sqlx-mysql", "sqlx-postgres", "sqlx-sqlite", "with-chrono"]
