@@ -10,6 +10,7 @@ pub struct Model {
     pub user_id: i32,
     pub client_identifier: String,
     pub client_secret: String,
+    pub creation_time: DateTimeWithTimeZone,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

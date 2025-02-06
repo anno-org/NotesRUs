@@ -22,7 +22,7 @@ cargo run # Runs The Application On `0.0.0.0:3000`
 ```
 # Deployment
 ## Docker
-We have docker images both on [Docker Hub](https://hub.docker.com/r/asskit/notesrus) and GitHub's [ghcr.io](https://github.com/l2dit/NotesRUs/pkgs/container/notesrus).
+We have docker images both on [Docker Hub](https://hub.docker.com/r/asskit/notesrus) and GitHub's [ghcr.io](https://github.com/l2dit/NotesRUs/pkgs/container/notesrus). To add persistance create a shared volume with the container or use postgres. Changing the default settings use this [List Of Enviroment Varibles](./kubernetes/README.md).
 
 ```bash
 docker pull ghcr.io/l2dit/notesrus:latest
@@ -30,5 +30,5 @@ docker pull ghcr.io/l2dit/notesrus:latest
 docker pull asskit/notesrus:latest
 ```
 
-## Deployment
+## Kubernetes
 This is slightly harder to recreate as curenetly we are using kubernetes info [HERE](./kubernetes).

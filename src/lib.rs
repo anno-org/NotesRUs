@@ -4,7 +4,7 @@
 //! </div>
 //!
 //! Documentation for the note storing app from your dreams. One part missing from this
-//! documentation is the database migrations crate [`notes_r_us_migration`].
+//! documentation is the database migrations crate [`notes_r_us_migrations`].
 //!
 //! ## Modules:
 //! - [`backend`][^backend]

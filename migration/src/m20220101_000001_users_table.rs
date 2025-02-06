@@ -26,7 +26,7 @@ impl MigrationTrait for Migration {
                                 .primary_key(),
                         )
                         .col(ColumnDef::new(Users::Username).char().not_null())
-                        .col(ColumnDef::new(Users::Name).char().not_null())
+                        .col(ColumnDef::new(Users::Name).char())
                         .col(ColumnDef::new(Users::MostRecentClient).integer())
                         .col(ColumnDef::new(Users::Role).integer().default(0u8))
                         .col(

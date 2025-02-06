@@ -1,7 +1,7 @@
 use clap::Parser;
 
 /// Simple program to greet a person
-#[derive(Parser, Debug)]
+#[derive(Parser, Debug, Clone)]
 #[command(version, about, long_about = None)]
 pub struct Args {
     /// Port For The Server
@@ -23,6 +23,10 @@ pub struct Args {
     /// Database Url (Postgres, Sqlite)
     #[arg(long, env, default_value_t = String::from("sqlite://./database.sqlite"))]
     pub database_url: String,
+
+    /// Server Hashing Secret
+    #[arg(long, env, short, default_value_t = String::from("Secure-Secret"))]
+    pub server_secret: String,
 }
 
 /// Create The Server String
@@ -38,13 +42,23 @@ pub fn server_url(args: &Args, suffix: Option<String>, http_prefix: bool) -> Str
     };
 
     match http_prefix {
-        true => {
-            return format!(
-                "{https}://{}{}",
-                args.domain,
-                suffix.unwrap_or(String::new())
-            )
-        }
+        true => match args.domain.as_str() {
+            "localhost" => {
+                return format!(
+                    "{https}://{}:{}{}",
+                    args.domain,
+                    args.port,
+                    suffix.unwrap_or(String::new())
+                )
+            }
+            _ => {
+                return format!(
+                    "{https}://{}{}",
+                    args.domain,
+                    suffix.unwrap_or(String::new())
+                )
+            }
+        },
 
         false => {
             return format!(

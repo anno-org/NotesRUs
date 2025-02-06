@@ -26,6 +26,11 @@ impl MigrationTrait for Migration {
                     .col(ColumnDef::new(Clients::UserId).integer().not_null())
                     .col(ColumnDef::new(Clients::ClientIdentifier).char().not_null())
                     .col(ColumnDef::new(Clients::ClientSecret).char().not_null())
+                    .col(
+                        ColumnDef::new(Clients::CreationTime)
+                            .timestamp_with_time_zone()
+                            .not_null(),
+                    )
                     .foreign_key(
                         ForeignKey::create()
                             .name("FK_users_id")
@@ -57,4 +62,6 @@ pub enum Clients {
     ClientIdentifier,
     /// The Secret Used To Authenticate.
     ClientSecret,
+    /// Creation Of The Client
+    CreationTime,
 }

@@ -1,122 +1,587 @@
-use chrono::{TimeZone, Utc};
-use chrono_tz::Pacific::Auckland;
-use poem_openapi::{
-    param::Path,
-    payload::{Attachment, AttachmentType, Json},
-    types::ToJSON,
-    OpenApi,
+use crate::{
+    backend::{
+        auth::security_scheme::{ServerSecret, UserToken},
+        requests::post::{PostCreation, PostEdition},
+        responses::post::{
+            PostCreationResponse, PostDeletionResponse, PostEditionResponse, PostGetResponse,
+            PostResponseSuccess,
+        },
+    },
+    entity::{
+        clients,
+        posts::{self, ActiveModel},
+        users,
+    },
 };
-use serde_json;
-#[path = "responses/mod.rs"]
+use auth::{
+    check::{AuthResult, CheckAuth},
+    otp_codes::{self, otp_code_verification, OTPCodeValidity},
+};
+use chrono::{DateTime, FixedOffset, Local, ParseResult};
+use jwt::SignWithKey;
+use names::{Generator, Name};
+use poem::web::Data;
+use poem_openapi::{
+    param::{Header, Query},
+    payload::{Json, PlainText},
+    OpenApi, Tags,
+};
+use requests::{
+    post::PostContentBody,
+    user::{UserOTPGenerationJsonRequest, UserOTPGenerationRequest},
+};
+use responses::user::{
+    UserOTPGenerationJsonResponse, UserOTPGenerationResponse, UserOTPUseResponse,
+};
+use sea_orm::{ActiveModelTrait, ActiveValue, EntityTrait, ModelTrait, QueryFilter};
+use sea_orm::{ColumnTrait, Set as DataBaseSet};
+use sea_orm::{DatabaseConnection, IntoActiveModel};
+use serde_json::json;
+use uuid::Uuid;
+
+use self::auth::{check, security_scheme::ApiSecurityScheme};
+
+use super::cli::Args;
+
+pub mod auth;
+pub mod requests;
 pub mod responses;
 
-#[derive(poem_openapi::Tags)]
-enum ApiTags {
-    /// All public API endpoints.
-    API,
-}
-
-#[derive(Debug, poem_openapi::Object, Clone)]
-pub struct File {
-    filename: Option<String>,
-    data: Vec<u8>,
-    upload_time: String,
-}
-
-pub struct Status {
-    pub id: u64,
-    pub files: std::collections::HashMap<u64, File>,
+#[derive(Tags)]
+pub enum ApiTags {
+    /// These routes are responsible for the creation and mangment of user accounts.
+    User,
+    /// Route Redirects To Docs
+    Redirects,
+    /// Post Managemet
+    Post,
 }
 
 pub struct Api {
-    pub status: tokio::sync::Mutex<Status>,
+    pub database_connection: DatabaseConnection,
+    pub args: Args,
 }
 
+// for development pruposes only should be removed
+#[allow(unused_variables)]
+
+/// Notes R Us API
+///
+/// # The Rust Documentation can be found at
+/// [docs.rs/notes_r_us/latest/notes_r_us/backend](https://docs.rs/notes_r_us/latest/notes_r_us/backend)
 #[OpenApi]
 impl Api {
-    /// Index / Docs
-    #[oai(path = "/", method = "get", tag = ApiTags::API)]
-    async fn index(&self) -> responses::Redirect {
+    /// Redirect The Index Path
+    ///
+    /// # Redirects
+    /// This Redirects the user from `.../` to `.../docs`
+    #[oai(path = "/", method = "get", tag = ApiTags::Redirects)]
+    pub async fn index(&self) -> responses::Redirect {
         responses::Redirect::Response("/api/docs".to_string())
     }
 
-    /// Upload file
-    #[oai(path = "/file/upload", method = "post", tag = ApiTags::API)]
-    async fn upload_file(&self, upload: responses::UploadPayload) -> poem::Result<Json<u64>> {
-        let mut status = self.status.lock().await;
-        let id = status.id;
-        status.id += 1;
-
-        let utc = Utc::now().naive_utc();
-        let dt = Auckland.from_utc_datetime(&utc);
-        let time_file_upload: chrono::format::DelayedFormat<chrono::format::StrftimeItems> =
-            dt.format("%Y-%m-%d %H:%M:%S");
-
-        let file = File {
-            filename: upload.file.file_name().map(ToString::to_string),
-            data: upload
-                .file
-                .into_vec()
-                .await
-                .map_err(poem::error::BadRequest)?,
-            upload_time: time_file_upload.to_string(),
+    /// User Creation
+    ///
+    /// # User Creation
+    /// This route is to be used to create a new user.
+    ///
+    /// Name param will be used on the data base side witch has not been implemted yet...
+    #[oai(path = "/user/creation", method = "get", tag = ApiTags::User)]
+    pub async fn create_user(
+        &self,
+        server_secret: Data<&ServerSecret>,
+        #[oai(name = "Name")] name: Header<Option<String>>,
+        #[oai(name = "ClientName")] client_name: Header<Option<String>>,
+    ) -> responses::user::CreateUserResponse {
+        // initlises the client object minuns the username
+        let mut client = UserToken {
+            client_secret: Uuid::new_v4()
+                .sign_with_key(&server_secret.clone())
+                .expect("Could Not Sign Client Secret"),
+            client_identifier: match client_name.0 {
+                Some(client_name) => client_name,
+                None => Generator::with_naming(Name::Plain)
+                    .next()
+                    .unwrap()
+                    .to_string(),
+            },
+            ..Default::default()
         };
-        status.files.insert(id, file);
-        Ok(Json(id))
-    }
 
-    /// Get file
-    #[oai(path = "/file/download/:id", method = "get", tag = ApiTags::API)]
-    async fn get_file(&self, id: Path<u64>) -> responses::GetFileResponse {
-        let status = self.status.lock().await;
-        match status.files.get(&id) {
-            Some(file) => {
-                let mut attachment =
-                    Attachment::new(file.data.clone()).attachment_type(AttachmentType::Attachment);
-                if let Some(filename) = &file.filename {
-                    attachment = attachment.filename(filename);
+        // user with out the username that includes there id `{username}` not `{username}-{id}`
+        let user: users::ActiveModel = users::ActiveModel {
+            username: sea_orm::ActiveValue::set(
+                Generator::with_naming(Name::Plain).next().unwrap(),
+            ),
+            name: match name.clone() {
+                Some(name) => sea_orm::ActiveValue::set(name.into()),
+                None => sea_orm::ActiveValue::not_set(),
+            },
+            most_recent_client: sea_orm::ActiveValue::not_set(),
+            role: sea_orm::ActiveValue::not_set(),
+            creation_time: sea_orm::ActiveValue::set(Local::now().into()),
+            ..Default::default()
+        };
+
+        // applies the user active model
+        let user: Result<users::Model, sea_orm::DbErr> =
+            user.insert(&self.database_connection).await;
+
+        // updates the username to be unique by adding the id of the user to the end `{username}-{id}`
+        let user: Result<users::Model, sea_orm::DbErr> = match user {
+            Ok(user_model) => {
+                client.user_name = format!("{}-{}", user_model.username, user_model.id);
+                let mut user: users::ActiveModel = user_model.clone().into_active_model();
+                user.set(users::Column::Username, client.user_name.clone().into());
+                user.update(&self.database_connection).await
+            }
+            Err(user_err) => Err(user_err),
+        };
+
+        let client_table: Result<clients::Model, sea_orm::DbErr> = match user {
+            Ok(user_model) => {
+                clients::ActiveModel {
+                    user_id: sea_orm::ActiveValue::Set(user_model.id),
+                    client_identifier: sea_orm::ActiveValue::Set(client.client_identifier.clone()),
+                    client_secret: sea_orm::ActiveValue::Set(client.client_secret.clone()),
+                    creation_time: sea_orm::ActiveValue::Set(Local::now().into()),
+                    ..Default::default()
                 }
-                responses::GetFileResponse::Ok(attachment)
+                .insert(&self.database_connection)
+                .await
             }
-            None => responses::GetFileResponse::NotFound,
+            Err(user_err) => Err(user_err),
+        };
+
+        // catches any error prone db code and returns to the user
+        match client_table {
+            Err(error) => {
+                return responses::user::CreateUserResponse::ERROR(Json(
+                    json!({"error" : format!("{error:?}"), "code":500}),
+                ));
+            }
+
+            Ok(_) => {
+                return responses::user::CreateUserResponse::Ok(
+                    Json(json!({
+                        "message": format!("{} account has been created", name.clone().unwrap_or("".to_string())).as_str()
+                    })),
+                    client.to_cookie_string(&self.args, server_secret.0.clone(), None),
+                );
+            }
         }
     }
 
-    /// Delete markdown file
-    #[oai(path = "/file/delete/:id", method = "delete", tag = ApiTags::API)]
-    async fn delete_file(&self, id: Path<u64>) -> responses::DeleteFileResponse {
-        let mut status = self.status.lock().await;
-        if status.files.get(&id).is_some() {
-            status.files.remove(&id).unwrap();
+    /// User Edit
+    ///
+    /// # Edit Name
+    /// This route is to remove or change the name of the user note this is not the same as
+    /// username.
+    #[oai(path = "/user/edit", method = "get", tag = ApiTags::User)]
+    pub async fn wow(
+        &self,
+        auth: ApiSecurityScheme,
+        #[oai(name = "NewName")] name: Query<String>,
+    ) -> responses::user::EditUserResponse {
+        match check::CheckAuth::new(&self.database_connection, auth.0.clone()).await {
+            AuthResult::Found(check_auth) => match check_auth.find_user_model().await {
+                AuthResult::Found(check_auth) => match check_auth.log_client().await {
+                    AuthResult::Found(check_auth) => {
+                        let mut user = check_auth.user_model.clone().unwrap().into_active_model();
+                        user.name = DataBaseSet(name.0.clone());
+                        user.update(&self.database_connection).await.unwrap();
 
-            responses::DeleteFileResponse::Ok(Json(format!(
-                "Deleted file with id: {}",
-                id.to_string()
-            )))
+                        responses::user::EditUserResponse::Ok(Json(json!({
+                            "message":
+                                format!(
+                                    "User {}'s name was updated to {}",
+                                    check_auth.user_model.unwrap().username,
+                                    name.0
+                                )
+                        })))
+                    }
+                    AuthResult::Err(error) => responses::user::EditUserResponse::Err(Json(
+                        json!({"message": "User recent client failed to be loged", "error": {"code": 500u16, "message": format!("{error:?}")}}),
+                    )),
+                    AuthResult::NotFound() => responses::user::EditUserResponse::Err(Json(
+                        json!({"message": "error yet to be caught"}),
+                    )),
+                },
+                AuthResult::Err(error) => responses::user::EditUserResponse::Err(Json(
+                    json!({"message": "Could not find user in database", "error": {"code": 500u16, "message": format!("{error:?}")}}),
+                )),
+                AuthResult::NotFound() => responses::user::EditUserResponse::Err(Json(
+                    json!({"message": "error yet to be caught"}),
+                )),
+            },
+            AuthResult::Err(error) => responses::user::EditUserResponse::Err(Json(
+                json!({"message": "User failed to authenticate", "error": {"code": 500u16, "message": format!("{error:?}")}}),
+            )),
+            AuthResult::NotFound() => responses::user::EditUserResponse::Err(Json(
+                json!({"message": "error yet to be caught"}),
+            )),
+        }
+    }
+
+    /// # OTP Code Generator/Creator
+    #[oai(path = "/user/otp/generate", method = "post", tag = ApiTags::User)]
+    pub async fn otp_generate(
+        &self,
+        auth: ApiSecurityScheme,
+        req: UserOTPGenerationRequest,
+    ) -> UserOTPGenerationResponse {
+        let request_body: UserOTPGenerationJsonRequest = match req {
+            UserOTPGenerationRequest::GenerateBody(body) => body.0,
+        };
+
+        //FIX: need to change this to some how not use a hanging refrance to
+        //make the variable to be avilable in this scope.
+        let mut expiry_stamp: Option<DateTime<FixedOffset>> = None;
+
+        match request_body.expirey_date {
+            Some(ref expiry_date) => {
+                let stamp: ParseResult<DateTime<FixedOffset>> =
+                    DateTime::parse_from_rfc2822(expiry_date.as_str());
+
+                match stamp {
+                    Err(error) => {
+                        return UserOTPGenerationResponse::Err(Json(
+                            json!({"message": "TimeStamp Could Not Be Parsed Make Sure Your Using `rfc2822`", "error": {"code": 500u16, "message": error.to_string()}}),
+                        ));
+                    }
+                    Ok(_) => (),
+                };
+                expiry_stamp = Some(stamp.unwrap());
+            }
+            None => expiry_stamp = None,
+        };
+
+        //FIX: need to change this to some how not use a hanging refrance to
+        //make the variable to be avilable in this scope.
+        let mut user_model: Option<users::Model> = None;
+
+        match CheckAuth::new(&self.database_connection, auth.0).await {
+            AuthResult::Found(auth) => match auth.find_user_model().await {
+                AuthResult::Found(found_user_model) => user_model = found_user_model.user_model,
+                AuthResult::NotFound() => {
+                    return UserOTPGenerationResponse::Err(Json(json!({"Auth_error": ""})))
+                }
+                AuthResult::Err(error) => {
+                    return UserOTPGenerationResponse::Err(Json(json!({"Auth_error": ""})))
+                }
+            },
+            AuthResult::NotFound() => {
+                return UserOTPGenerationResponse::Err(Json(json!({"Auth_error": ""})))
+            }
+            AuthResult::Err(error) => {
+                return UserOTPGenerationResponse::Err(Json(json!({"Auth_error": ""})))
+            }
+        };
+
+        if let Some(user_model) = user_model {
+            match otp_codes::OTPGenerator::gen(
+                request_body.number_of_codes.into(),
+                expiry_stamp,
+                &user_model,
+            )
+            .unwrap()
+            .apply(&self.database_connection)
+            .await
+            {
+                Ok(codes) => {
+                    return UserOTPGenerationResponse::Ok(Json(UserOTPGenerationJsonResponse {
+                        user_id: user_model.id as u64,
+                        otp_codes: codes,
+                        expiry: request_body.expirey_date,
+                    }))
+                }
+                Err(error) => {
+                    return UserOTPGenerationResponse::Err(Json(
+                        json!({"Message": "Database Error", "error": {"code": 500u16, "message": error.to_string()}}),
+                    ))
+                }
+            }
         } else {
-            responses::DeleteFileResponse::NotFound
+            return UserOTPGenerationResponse::Err(Json(json!({
+                "Message": "Database Error",
+                "error": {
+                    "code": 500u16,
+                    "message": "User/user_model Was Not Found"
+                }
+            })));
         }
     }
 
-    /// View file markdown content
-    #[oai(path = "/file/view/:id", method = "get", tag = ApiTags::API)]
-    async fn view_file(&self, id: Path<u64>) -> responses::ViewFileResponse {
-        let status = self.status.lock().await;
-        match status.files.get(&id) {
-            Some(file) => {
-                let file_content: String = String::from_utf8(file.data.clone()).unwrap();
+    /// OTP Code Authentication
+    #[oai(path = "/user/otp/authenticate", method = "post", tag = ApiTags::User)]
+    pub async fn otp_authenticate(
+        &self,
+        server_secret: Data<&ServerSecret>,
+        code: Query<String>,
+        client_identifier: Query<String>,
+    ) -> UserOTPUseResponse {
+        match otp_code_verification(code.0, &self.database_connection).await {
+            Ok(OTPCodeValidity::Valid(user_model)) => {
+                let client_token = UserToken {
+                    client_identifier: client_identifier.0.clone(),
+                    client_secret: Uuid::new_v4().to_string(),
+                    user_name: user_model.username,
+                    ..Default::default()
+                };
 
-                responses::ViewFileResponse::Ok(poem_openapi::payload::PlainText(file_content))
+                let client = clients::ActiveModel {
+                    user_id: sea_orm::ActiveValue::Set(user_model.id),
+                    client_identifier: sea_orm::ActiveValue::Set(client_identifier.0),
+                    client_secret: sea_orm::ActiveValue::Set(client_token.client_secret.clone()),
+                    creation_time: sea_orm::ActiveValue::Set(client_token.creation_date.into()),
+                    ..Default::default()
+                };
+                match client.insert(&self.database_connection).await {
+                    Ok(_) => UserOTPUseResponse::Ok(
+                        Json(json!({})),
+                        client_token.to_cookie_string(&self.args, server_secret.0.clone(), None),
+                    ),
+                    Err(error) => UserOTPUseResponse::Err(Json(responses::ErrorMessage {
+                        message: "Database Failure To Create Client".to_string(),
+                        error: responses::Error {
+                            message: error.to_string(),
+                            code: 500,
+                        },
+                    })),
+                }
             }
-            None => responses::ViewFileResponse::NotFound,
+            Err(error) => UserOTPUseResponse::Err(Json(responses::ErrorMessage {
+                message: "Database Failure On Fetch Of Code".to_string(),
+                error: responses::Error {
+                    code: 500,
+                    message: error.to_string(),
+                },
+            })),
+            Ok(OTPCodeValidity::Invalid(invalid_error)) => {
+                UserOTPUseResponse::Invalid(Json(responses::ErrorMessage {
+                    message: "Code Was Invalid".to_string(),
+                    error: responses::Error {
+                        code: 401,
+                        message: invalid_error,
+                    },
+                }))
+            }
         }
     }
 
-    /// Get all files
-    #[oai(path = "/file/all", method = "get", tag = ApiTags::API)]
-    async fn get_all_files(&self) -> poem::Result<Json<serde_json::Value>> {
-        let status = self.status.lock().await;
+    /// Create A New Post/Note
+    ///
+    /// This route is to create A new post and returning a adquite response to user.
+    #[oai(path = "/post/create", method = "put", tag = ApiTags::Post)]
+    pub async fn post_create(
+        &self,
+        server_secret: Data<&ServerSecret>,
+        auth: ApiSecurityScheme,
+        req: PostCreation,
+    ) -> PostCreationResponse {
+        let request_body: PostContentBody = match req {
+            PostCreation::CreatePost(body) => body.0,
+        };
 
-        Ok(Json(status.files.to_json().unwrap()))
+        let user_info: CheckAuth = match CheckAuth::new(&self.database_connection, auth.0).await {
+            AuthResult::Found(check_auth_struct) => check_auth_struct,
+            AuthResult::NotFound() => return PostCreationResponse::Forbiden,
+            AuthResult::Err(db_err) => {
+                return PostCreationResponse::Err(PlainText(db_err.to_string()))
+            }
+        }
+        .log_client()
+        .await
+        .unwrap_found()
+        .find_user_model()
+        .await
+        .unwrap_found();
+
+        let post: Result<posts::Model, sea_orm::DbErr> = posts::ActiveModel {
+            user_id: sea_orm::ActiveValue::Set(user_info.user_id),
+            title: sea_orm::ActiveValue::Set(request_body.title),
+            body: sea_orm::ActiveValue::Set(request_body.body),
+            creation_time: sea_orm::ActiveValue::Set(Local::now().into()),
+            ..Default::default()
+        }
+        .insert(&self.database_connection)
+        .await;
+
+        match post {
+            Ok(model) => {
+                return PostCreationResponse::PostCreated(Json(PostResponseSuccess {
+                    username: match user_info.user_model {
+                        Some(user_model) => user_model.username,
+                        None => {
+                            return PostCreationResponse::Err(PlainText(
+                                "DBERR: Failed To Find The Username/Model".to_string(),
+                            ))
+                        }
+                    },
+                    post_id: model.id,
+                }))
+            }
+            Err(db_err) => PostCreationResponse::Err(PlainText(db_err.to_string())),
+        }
+    }
+
+    /// Edit An Exsiting Post/Note
+    ///
+    /// This route is to edit an existing post by `PostId`.
+    #[oai(path = "/post/edit", method = "post", tag = ApiTags::Post)]
+    pub async fn post_edit(
+        &self,
+        auth: ApiSecurityScheme,
+        #[oai(name = "PostId")] post_id: Query<i32>,
+        req: PostEdition,
+    ) -> PostEditionResponse {
+        let req: PostContentBody = match req {
+            PostEdition::EditPost(body) => body.0,
+        };
+
+        // NOTE: The unread values should be replaced for a better soloution. (🗿)
+        let mut user_id: i32 = 0i32;
+        let mut username: String = "".to_string();
+
+        // user authentication plus catching all possible errors
+        match CheckAuth::new(&self.database_connection, auth.0).await {
+            AuthResult::Found(check_auth_struct) => match check_auth_struct.log_client().await {
+                AuthResult::Found(check_auth_struct) => {
+                    user_id = check_auth_struct.user_id;
+                    username = check_auth_struct.user_model.unwrap().username;
+                }
+                AuthResult::Err(db_err) => {
+                    return PostEditionResponse::Err(Json(format!("'DbErr': '{db_err}'")))
+                }
+                AuthResult::NotFound() => return PostEditionResponse::Forbiden,
+            },
+            AuthResult::Err(db_err) => {
+                return PostEditionResponse::Err(Json(format!("'DbErr': '{db_err}'")))
+            }
+            AuthResult::NotFound() => return PostEditionResponse::Forbiden,
+        }
+
+        // find the curent post state and edit it
+        match posts::Entity::find_by_id(post_id.0)
+            .filter(posts::Column::UserId.contains(user_id.to_string()))
+            .one(&self.database_connection)
+            .await
+        {
+            Ok(Some(post_model)) => {
+                let mut post_model: posts::ActiveModel = post_model.into_active_model();
+                post_model.title = ActiveValue::Set(req.title);
+                post_model.body = ActiveValue::Set(req.body);
+                match post_model.update(&self.database_connection).await {
+                    Ok(post_model) => {
+                        return PostEditionResponse::PostEdtion(Json(PostResponseSuccess {
+                            username: username,
+                            post_id: post_model.id,
+                        }))
+                    }
+                    Err(db_err) => {
+                        return PostEditionResponse::Err(Json(format!("'DbErr': '{db_err}'")))
+                    }
+                }
+            }
+            Ok(None) => {
+                return PostEditionResponse::Err(Json("'DbErr': 'post not found'".to_string()))
+            }
+            Err(db_err) => return PostEditionResponse::Err(Json(format!("'DbErr': '{db_err}'"))),
+        }
+    }
+
+    /// Delete A Post/Note
+    ///
+    /// This route is to delete a note by `PostId`.
+    #[oai(path = "/post/delete", method = "delete", tag = ApiTags::Post)]
+    pub async fn post_delete(
+        &self,
+        auth: ApiSecurityScheme,
+        #[oai(name = "PostId")] post_id: Query<i32>,
+    ) -> PostDeletionResponse {
+        //NOTE: Should remove these variables in exchange for a better soloution.
+        let mut user_id: i32 = 0i32;
+        let mut username: String = "".to_string();
+
+        match CheckAuth::new(&self.database_connection, auth.0).await {
+            AuthResult::Found(check_auth_struct) => match check_auth_struct.log_client().await {
+                AuthResult::Found(check_auth_struct) => {
+                    user_id = check_auth_struct.user_id;
+
+                    //NOTE: in the procerss of running the log_client function
+                    //it retrives user_model.
+                    username = check_auth_struct.user_model.unwrap().username;
+                }
+                AuthResult::NotFound() => return PostDeletionResponse::Forbiden,
+                AuthResult::Err(db_err) => {
+                    return PostDeletionResponse::Err(PlainText(db_err.to_string()))
+                }
+            },
+            AuthResult::NotFound() => return PostDeletionResponse::Forbiden,
+            AuthResult::Err(db_err) => {
+                return PostDeletionResponse::Err(PlainText(db_err.to_string()))
+            }
+        };
+
+        //NOTE: if the user was not able to login to delete the post they would
+        //allready have recived a error
+
+        match posts::Entity::find_by_id(post_id.0)
+            .filter(posts::Column::UserId.contains(user_id.to_string()))
+            .one(&self.database_connection)
+            .await
+        {
+            Ok(Some(post_model)) => match post_model.delete(&self.database_connection).await {
+                Ok(deletion_res) => {
+                    return PostDeletionResponse::PostDeletion(Json(PostResponseSuccess {
+                        username,
+                        post_id: post_id.0,
+                    }))
+                }
+                Err(db_err) => {
+                    return PostDeletionResponse::Err(PlainText(format!("DBERR: {db_err}")))
+                }
+            },
+            Ok(None) => PostDeletionResponse::Forbiden,
+            Err(db_err) => PostDeletionResponse::Err(PlainText(format!("DBERR: {db_err}"))),
+        }
+    }
+
+    /// Get A Post/Note
+    ///
+    /// This route gets posts/notes by id.
+    #[oai(path = "/post/get", method = "get", tag = ApiTags::Post)]
+    pub async fn post_get(&self, #[oai(name = "PostId")] post_id: Query<i32>) -> PostGetResponse {
+        match posts::Entity::find_by_id(post_id.0)
+            .one(&self.database_connection)
+            .await
+        {
+            Ok(post_model) => match post_model {
+                Some(post_model) => {
+                    let username: String = match users::Entity::find_by_id(post_model.user_id)
+                        .one(&self.database_connection)
+                        .await
+                    {
+                        Ok(Some(user_model)) => user_model.username,
+                        _ => "User Dosen't Exsit Or A DbErr Occurred".to_string(),
+                    };
+                    return PostGetResponse::PostFound(Json(responses::post::Post {
+                        username,
+                        post_id: post_model.id,
+                        title: post_model.title,
+                        body: post_model.body,
+                        created_at: post_model.creation_time.to_rfc3339(),
+                        edited_at: match post_model.edit_time {
+                            Some(edit_time) => edit_time.to_rfc3339(),
+                            None => "".to_string(),
+                        },
+                        up_votes: post_model.up_votes.unwrap_or(0i32),
+                        down_votes: post_model.up_votes.unwrap_or(0i32),
+                    }));
+                }
+                None => PostGetResponse::PostNotFound,
+            },
+            Err(db_err) => PostGetResponse::Err(PlainText(format!("DbErr: {db_err}"))),
+        }
     }
 }

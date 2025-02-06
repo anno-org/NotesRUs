@@ -1,21 +1,19 @@
-use chrono::Local;
+use hmac::{Hmac, Mac};
 use notes_r_us::{
-    backend,
-    entity::{prelude::*, users},
+    backend::{auth::security_scheme::ServerSecret, Api},
+    cli,
 };
 use poem::{
     endpoint::StaticFilesEndpoint, listener::TcpListener, middleware::Cors, middleware::Tracing,
     EndpointExt, Route, Server,
 };
 use poem_openapi::OpenApiService;
-use sea_orm::{ActiveValue, Database, EntityTrait};
+use sea_orm::{ConnectOptions, Database, DatabaseConnection};
 use std::{env, io};
 use tracing::Level;
 use tracing_subscriber::FmtSubscriber;
 
-use notes_r_us_migrations::{self, Migrator, MigratorTrait};
-
-mod cli;
+use notes_r_us_migrations::{Migrator, MigratorTrait};
 
 #[tokio::main]
 async fn main() -> io::Result<()> {
@@ -23,25 +21,19 @@ async fn main() -> io::Result<()> {
     let args = cli::parse();
 
     // Database Connection
-    let database = Database::connect(&args.database_url).await.unwrap();
+    let mut database_connection_config = ConnectOptions::new(&args.database_url);
+
+    database_connection_config.sqlx_logging_level(log::LevelFilter::Off);
+
+    let database_connection: DatabaseConnection =
+        Database::connect(database_connection_config).await.unwrap();
 
     // Migration run
-    let _ = Migrator::up(&database, None).await;
+    let _ = Migrator::up(&database_connection, None).await;
 
-    // \\\\\\\\\\\DEMO-CODE\\\\\\\\\\
-    // let user = users::ActiveModel {
-    //     username: ActiveValue::set("notliam_99".into()),
-    //     name: ActiveValue::set("Liam T".into()),
-    //     most_recent_client: ActiveValue::not_set(),
-    //     role: ActiveValue::not_set(),
-    //     creation_time: ActiveValue::set(Local::now().into()),
-    //     ..Default::default()
-    // };
-
-    // let user = Users::insert(user).exec(&database).await;
-
-    // println!("{user:?}");
-    // \\\\\\\\\\DEMO-CODE\\\\\\\\\
+    // Hmac Signing Key
+    let server_key: ServerSecret = Hmac::new_from_slice(args.server_secret.as_bytes())
+        .expect("The Server Secret Is Too Short This Is Insecure");
 
     // Set up tracing subscriber for logging
     let subscriber = FmtSubscriber::builder()
@@ -80,11 +72,9 @@ async fn main() -> io::Result<()> {
 
     // Create the API service
     let api_service = OpenApiService::new(
-        backend::Api {
-            status: tokio::sync::Mutex::new(backend::Status {
-                id: 1,
-                files: Default::default(),
-            }),
+        Api {
+            args: args.clone(),
+            database_connection,
         },
         "Notes R Us API Documentation",
         env!("CARGO_PKG_VERSION"),
@@ -92,6 +82,10 @@ async fn main() -> io::Result<()> {
     // Set up the application routes
     .server(cli::server_url(&args, Some(String::from("/api/")), true));
     let ui_docs_swagger = api_service.swagger_ui();
+
+    // Web Ui
+    let web_ui = StaticFilesEndpoint::new(env::current_dir().unwrap().join("notes_r_us_ui/dist"))
+        .index_file("index.html");
 
     // Apply CORS middleware to the routes
     let app = Route::new()
@@ -101,13 +95,10 @@ async fn main() -> io::Result<()> {
                 .nest("/", api_service)
                 .nest("/docs", ui_docs_swagger)
                 .with(cors)
-                .with(Tracing),
+                .with(Tracing)
+                .data(server_key),
         )
-        .nest(
-            "/",
-            StaticFilesEndpoint::new(env::current_dir().unwrap().join("notes_r_us_ui/dist"))
-                .index_file("index.html"),
-        );
+        .nest("/", web_ui);
     // Start the server
     Server::new(TcpListener::bind(format!(
         "{}:{}",
