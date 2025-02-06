@@ -30,5 +30,5 @@ docker pull ghcr.io/l2dit/notesrus:latest
 docker pull asskit/notesrus:latest
 ```
 
-## Deployment
+## Kubernetes
 This is slightly harder to recreate as curenetly we are using kubernetes info [HERE](./kubernetes).
