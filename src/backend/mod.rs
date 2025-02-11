@@ -535,7 +535,7 @@ impl Api {
             .await
         {
             Ok(Some(post_model)) => {
-                if post_model.user_id == user_id {
+                if post_model.user_id != user_id {
                     return PostDeletionResponse::Forbiden;
                 };
                 match post_model.delete(&self.database_connection).await {
