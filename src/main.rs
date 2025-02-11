@@ -23,7 +23,7 @@ async fn main() -> io::Result<()> {
     // Database Connection
     let mut database_connection_config = ConnectOptions::new(&args.database_url);
 
-    database_connection_config.sqlx_logging_level(log::LevelFilter::Off);
+    database_connection_config.sqlx_logging_level(log::LevelFilter::Error);
 
     let database_connection: DatabaseConnection =
         Database::connect(database_connection_config).await.unwrap();
