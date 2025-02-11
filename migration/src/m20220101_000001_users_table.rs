@@ -25,8 +25,8 @@ impl MigrationTrait for Migration {
                                 .auto_increment()
                                 .primary_key(),
                         )
-                        .col(ColumnDef::new(Users::Username).char().not_null())
-                        .col(ColumnDef::new(Users::Name).char())
+                        .col(ColumnDef::new(Users::Username).string().not_null())
+                        .col(ColumnDef::new(Users::Name).string())
                         .col(ColumnDef::new(Users::MostRecentClient).integer())
                         .col(ColumnDef::new(Users::Role).integer().default(0u8))
                         .col(
@@ -56,8 +56,8 @@ impl MigrationTrait for Migration {
                                 .auto_increment()
                                 .primary_key(),
                         )
-                        .col(ColumnDef::new(Users::Username).char().not_null())
-                        .col(ColumnDef::new(Users::Name).char().not_null())
+                        .col(ColumnDef::new(Users::Username).string().not_null())
+                        .col(ColumnDef::new(Users::Name).string().not_null())
                         .col(ColumnDef::new(Users::MostRecentClient).integer())
                         .col(ColumnDef::new(Users::Role).integer().default(0u8))
                         .col(

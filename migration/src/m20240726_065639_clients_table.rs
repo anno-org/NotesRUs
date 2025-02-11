@@ -24,8 +24,12 @@ impl MigrationTrait for Migration {
                             .primary_key(),
                     )
                     .col(ColumnDef::new(Clients::UserId).integer().not_null())
-                    .col(ColumnDef::new(Clients::ClientIdentifier).char().not_null())
-                    .col(ColumnDef::new(Clients::ClientSecret).char().not_null())
+                    .col(
+                        ColumnDef::new(Clients::ClientIdentifier)
+                            .string()
+                            .not_null(),
+                    )
+                    .col(ColumnDef::new(Clients::ClientSecret).string().not_null())
                     .col(
                         ColumnDef::new(Clients::CreationTime)
                             .timestamp_with_time_zone()

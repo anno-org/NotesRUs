@@ -463,18 +463,20 @@ impl Api {
 
         // find the curent post state and edit it
         match posts::Entity::find_by_id(post_id.0)
-            .filter(posts::Column::UserId.contains(user_id.to_string()))
             .one(&self.database_connection)
             .await
         {
             Ok(Some(post_model)) => {
+                if post_model.user_id != user_id {
+                    return PostEditionResponse::Forbiden;
+                };
                 let mut post_model: posts::ActiveModel = post_model.into_active_model();
                 post_model.title = ActiveValue::Set(req.title);
                 post_model.body = ActiveValue::Set(req.body);
                 match post_model.update(&self.database_connection).await {
                     Ok(post_model) => {
                         return PostEditionResponse::PostEdtion(Json(PostResponseSuccess {
-                            username: username,
+                            username,
                             post_id: post_model.id,
                         }))
                     }
@@ -486,7 +488,9 @@ impl Api {
             Ok(None) => {
                 return PostEditionResponse::Err(Json("'DbErr': 'post not found'".to_string()))
             }
-            Err(db_err) => return PostEditionResponse::Err(Json(format!("'DbErr': '{db_err}'"))),
+            Err(db_err) => {
+                return PostEditionResponse::Err(Json(format!("finding ... ?'DbErr': '{db_err}'")))
+            }
         }
     }
 
@@ -527,21 +531,25 @@ impl Api {
         //allready have recived a error
 
         match posts::Entity::find_by_id(post_id.0)
-            .filter(posts::Column::UserId.contains(user_id.to_string()))
             .one(&self.database_connection)
             .await
         {
-            Ok(Some(post_model)) => match post_model.delete(&self.database_connection).await {
-                Ok(deletion_res) => {
-                    return PostDeletionResponse::PostDeletion(Json(PostResponseSuccess {
-                        username,
-                        post_id: post_id.0,
-                    }))
+            Ok(Some(post_model)) => {
+                if post_model.user_id != user_id {
+                    return PostDeletionResponse::Forbiden;
+                };
+                match post_model.delete(&self.database_connection).await {
+                    Ok(deletion_res) => {
+                        return PostDeletionResponse::PostDeletion(Json(PostResponseSuccess {
+                            username,
+                            post_id: post_id.0,
+                        }))
+                    }
+                    Err(db_err) => {
+                        return PostDeletionResponse::Err(PlainText(format!("DBERR: {db_err}")))
+                    }
                 }
-                Err(db_err) => {
-                    return PostDeletionResponse::Err(PlainText(format!("DBERR: {db_err}")))
-                }
-            },
+            }
             Ok(None) => PostDeletionResponse::Forbiden,
             Err(db_err) => PostDeletionResponse::Err(PlainText(format!("DBERR: {db_err}"))),
         }
