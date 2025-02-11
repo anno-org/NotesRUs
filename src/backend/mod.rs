@@ -467,7 +467,7 @@ impl Api {
             .await
         {
             Ok(Some(post_model)) => {
-                if post_model.user_id == user_id {
+                if post_model.user_id != user_id {
                     return PostEditionResponse::Forbiden;
                 };
                 let mut post_model: posts::ActiveModel = post_model.into_active_model();
