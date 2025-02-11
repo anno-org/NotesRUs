@@ -26,7 +26,7 @@ spec:
     spec:
       containers:
       - name: notes-r-us
-        image: ghcr.io/anno-org/notesrus:cd1ec538eeeb04fc0b400226a4017bf7fe7e14e8
+        image: ghcr.io/anno-org/notesrus:3ef969839882958f385c33df1e5767c09d94fdab
         ports:
         - containerPort: 3000
 
