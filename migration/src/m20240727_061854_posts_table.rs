@@ -26,7 +26,7 @@ impl MigrationTrait for Migration {
                     .col(ColumnDef::new(Posts::UserId).integer().not_null())
                     .col(ColumnDef::new(Posts::UpVotes).integer().default(0u8))
                     .col(ColumnDef::new(Posts::DownVotes).integer().default(0u8))
-                    .col(ColumnDef::new(Posts::Title).char().not_null())
+                    .col(ColumnDef::new(Posts::Title).string().not_null())
                     .col(ColumnDef::new(Posts::Body).text().not_null())
                     .col(
                         ColumnDef::new(Posts::CreationTime)
