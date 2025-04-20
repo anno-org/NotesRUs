@@ -22,26 +22,30 @@ repository = "https://github.com/l2dit/notesrus.git"
 license-file = "LICENSE"
 keywords = ["Api", "Notes", "Database"]
 
+[features]
+# locked_origin this dosent allow cross origin connections.
+locked_origin = []
+
 [dependencies]
 swagger = "6.5.0"
-tokio = { version = "1.43.0", features = ["full"] }
+tokio = { version = "1.44.2", features = ["full"] }
 tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
 tracing = "0.1.41"
-serde_json = "1.0.138"
-chrono = "0.4.39"
-chrono-tz = "0.10.1"
+serde_json = "1.0.140"
+chrono = "0.4.40"
+chrono-tz = "0.10.3"
 notes_r_us_migrations = { path = "./migration", version = "0.1.1"}
-serde = "1.0.217"
+serde = "1.0.219"
 sha2 = "0.10.8"
 hmac = "0.12.1"
 jwt = "0.16.0"
-uuid = { version = "1.12.1", features = ["fast-rng", "v4"] }
+uuid = { version = "1.16.0", features = ["fast-rng", "v4"] }
 names = "0.14.0"
 derive_more = { version = "2.0.1", features = ["unwrap"] }
-log = "0.4.25"
+log = "0.4.27"
 
 [dependencies.poem]
-version = "3.1.6"
+version = "3.1.9"
 features = [
 	"static-files",
 	"multipart",
@@ -49,21 +53,21 @@ features = [
 ]
 
 [dependencies.poem-openapi]
-version = "5.1.5"
+version = "5.1.13"
 features = [
 	"swagger-ui",
 	"openapi-explorer"
 ]
 
 [dependencies.clap]
-version = "4.5.28"
+version = "4.5.37"
 features = [
 	"derive",
 	"env"
 ]
 
 [dependencies.sea-orm]
-version = "1.1.4"
+version = "1.1.10"
 features = [
 	"runtime-tokio-rustls",
 	"sqlx-mysql",

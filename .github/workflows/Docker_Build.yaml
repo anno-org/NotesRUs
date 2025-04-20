@@ -39,29 +39,8 @@ jobs:
           path: ./target/${{ matrix.target }}/release/notes_r_us
           name: ${{ matrix.arch-ref }}-${{ github.sha }}
 
-  build-frontend:
-    runs-on: ubuntu-latest
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Use Node.js
-        uses: actions/setup-node@v4
-
-      - name: NPM Install Dependencies
-        run: npm install --prefix ./notes_r_us_ui/
-
-      - name: Build Frontend 
-        run: npm run build --if-present --prefix ./notes_r_us_ui
-
-      - name: Upload Frontend
-        uses: actions/upload-artifact@v4
-        with:
-          name: Frontend-${{ github.sha }}
-          path: ./notes_r_us_ui/dist/
-  
   docker_build:
-    needs: [build-frontend, build-api]
+    needs: build-api
     name: Docker Build
 
     runs-on: ubuntu-latest
@@ -80,12 +59,6 @@ jobs:
       - uses: actions/checkout@v4
         with:
           sparse-checkout: .
-
-      - name: Get The Frontend
-        uses: actions/download-artifact@v4
-        with:
-          name: Frontend-${{ github.sha }}
-          path: ./notes_r_us_ui/
 
       - name: Get The Api
         uses: actions/download-artifact@v4
@@ -129,4 +102,4 @@ jobs:
             asskit/notesrus:latest
             ghcr.io/${{ env.REPO }}:${{ github.sha }}
             ghcr.io/${{ env.REPO }}:latest
-          file: ./ci.Dockerfile 
+          file: ./ci.Dockerfile
