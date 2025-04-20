@@ -111,17 +111,15 @@ async fn main() -> io::Result<()> {
         .index_file("index.html");
 
     // Apply CORS middleware to the routes
-    let app = Route::new()
-        .nest(
-            "/api",
-            Route::new()
-                .nest("/", api_service)
-                .nest("/docs", ui_docs_swagger)
-                .with(cors)
-                .with(Tracing)
-                .data(server_key),
-        )
-        .nest("/", web_ui);
+    let app = Route::new().nest(
+        "/api",
+        Route::new()
+            .nest("/", api_service)
+            .nest("/docs", ui_docs_swagger)
+            .with(cors)
+            .with(Tracing)
+            .data(server_key),
+    );
     // Start the server
     Server::new(TcpListener::bind(format!(
         "{}:{}",
