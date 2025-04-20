@@ -40,7 +40,7 @@ jobs:
           name: ${{ matrix.arch-ref }}-${{ github.sha }}
 
   docker_build:
-    needs: [build-frontend, build-api]
+    needs: build-api
     name: Docker Build
 
     runs-on: ubuntu-latest
