@@ -22,6 +22,10 @@ repository = "https://github.com/l2dit/notesrus.git"
 license-file = "LICENSE"
 keywords = ["Api", "Notes", "Database"]
 
+[features]
+# locked_origin this dosent allow cross origin connections.
+locked_origin = []
+
 [dependencies]
 swagger = "6.5.0"
 tokio = { version = "1.43.0", features = ["full"] }

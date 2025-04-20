@@ -43,12 +43,35 @@ async fn main() -> io::Result<()> {
 
     println!("{}", cli::server_url(&args, Some(String::from("/")), true));
 
-    // Configure CORS settings
+    // Configure CORS settings For locked_orgign feature
+    #[cfg(feature = "locked_origin")]
     let cors = Cors::new()
-        .allow_origins(vec![
-            cli::server_url(&args, None, true).as_str(),
-            "http://localhost:5173",
+        .allow_origins(vec![cli::server_url(&args, None, true).as_str()]) // normal server origin
+        .allow_methods(vec!["GET", "POST", "PUT", "DELETE", "OPTIONS"])
+        .allow_headers(vec![
+            "Authorization",
+            "Content-Type",
+            "X-Requested-With",
+            "Accept",
+            "Origin",
+            "Content-Disposition",
+            "*",
         ])
+        .allow_credentials(true)
+        .expose_headers(vec![
+            "Authorization",
+            "Content-Type",
+            "X-Requested-With",
+            "Accept",
+            "Origin",
+            "Content-Disposition",
+            "*",
+        ]);
+
+    // Configure CORS settings
+    #[cfg(not(feature = "locked_origin"))]
+    let cors = Cors::new()
+        .allow_origin_regex("*") // normal server origin
         .allow_methods(vec!["GET", "POST", "PUT", "DELETE", "OPTIONS"])
         .allow_headers(vec![
             "Authorization",
